@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -12,13 +13,8 @@ namespace Assign_3
         public Api()
         {
         }
-
-        private List<Category> categories = new List<Category>
-        {
-            new Category {cid = 1, name = "Beverages"},
-            new Category {cid = 2, name = "Condiments"},
-            new Category {cid = 3, name = "Confections"}
-        };
+        
+        Facade facade = new Facade();
 
         private List<string> statusCode = new List<string>
         {
@@ -39,7 +35,7 @@ namespace Assign_3
             try
             {
                 var jobject = JsonConvert.DeserializeObject<JObject>(request);
-                if (!jobject.HasValues || jobject == null) return JsonConvert.SerializeObject(returnObj);
+                if (!jobject.HasValues || jobject == null ) return JsonConvert.SerializeObject(returnObj);
 
                 // Forkert dato eller metode
                 Regex date = new Regex(@"\d{10}$");
@@ -53,127 +49,22 @@ namespace Assign_3
                     returnObj.body = "";
                     return JsonConvert.SerializeObject(returnObj);
                 }
-
                 //  echo
-                if (jobject.ContainsKey("method") && jobject.ContainsKey("date") && jobject.ContainsKey("body"))
+                if (jobject.ContainsKey("method") && jobject.ContainsKey("date") && jobject.ContainsKey("body") && methodMatch.Value.Equals("echo"))
                 {
-                    switch (methodMatch.Value)
-                    {
-                        case "echo":
-                            returnObj.status = statusCode[0];
-                            returnObj.body = jobject.SelectToken("body");
-                            return JsonConvert.SerializeObject(returnObj);
-                    }
-
-                    
+                    returnObj = Controller(jobject, methodMatch.Value);
                 }
                 
-                // er path bra?
-                Regex pathSpecific = new Regex(@"^\/api\/categories\/\d+$");
-                Match pathMatchSpecific = pathSpecific.Match(jobject.SelectToken("path").ToString());
-                Regex path = new Regex(@"^\/api\/categories$");
-                Match pathMatch = path.Match(jobject.SelectToken("path").ToString());
-
                 // read, delete
-                if (jobject.ContainsKey("method") && jobject.ContainsKey("date") && jobject.ContainsKey("path"))
+                if (jobject.ContainsKey("method") && jobject.ContainsKey("date") && jobject.ContainsKey("path") && (methodMatch.Value.Equals("read")||methodMatch.Value.Equals("delete")))
                 {
-                    switch (methodMatch.Value)
-                    {
-                        case "read":
-                            if (pathMatch.Value.Length == 0 && pathMatchSpecific.Value.Length == 0)
-                            {
-                                returnObj.status = statusCode[3];
-                                returnObj.body = null;
-                            }
-                            else
-                            {
-                                List<Category> returnCat = Read(jobject.SelectToken("path"));
-                                returnObj.status = statusCode[0];
-                                switch (returnCat.Count)
-                                {
-                                    case 0:
-                                        returnObj.status = statusCode[4];
-                                        returnObj.body = null;
-                                        break;
-                                    case 1:
-                                        returnObj.body = JsonConvert.SerializeObject(returnCat[0]);
-                                        break;
-                                    default:
-                                        returnObj.body = JsonConvert.SerializeObject(returnCat);
-                                        break;
-                                }
-                            }
-
-                            break;
-
-                        case "delete":
-                            if (pathMatchSpecific.Value.Length == 0)
-                            {
-                                returnObj.status = statusCode[3];
-                                returnObj.body = null;
-                            }
-
-                            Category c = Delete(jobject.SelectToken("path"));
-                            if (c != null)
-                            {
-                                returnObj.status = statusCode[0];
-                                returnObj.body = "";
-                            }
-                            else
-                            {
-                                returnObj.status = statusCode[4];
-                                returnObj.body = "";
-                            }
-
-                            break;
-                    }
+                    returnObj = Controller(jobject, methodMatch.Value);
                 }
-
                 // update, create
-
                 if (jobject.ContainsKey("method") && jobject.ContainsKey("date") && jobject.ContainsKey("path") &&
-                    jobject.ContainsKey("body"))
+                    jobject.ContainsKey("body")&& (methodMatch.Value.Equals("update")||methodMatch.Value.Equals("create")))
                 {
-                    Regex body = new Regex(@"^[a-zA-Z]{1,25}$");
-                    JToken jToken = jobject.SelectToken("body").ToString();
-                    dynamic json = JsonConvert.DeserializeObject(jToken.ToString());
-                    Match bodyMatch = body.Match(json["name"].ToString());
-
-                    switch (methodMatch.Value)
-                    {
-                        case "create":
-                            if (pathMatch.Value.Length == 0 || bodyMatch.Value.Length == 0)
-                            {
-                                returnObj.status = statusCode[3];
-                                returnObj.body = null;
-                                return JsonConvert.SerializeObject(returnObj);
-                            }
-                            returnObj.status = statusCode[1];
-                            returnObj.body = JsonConvert.SerializeObject(Create(jobject.SelectToken("body")));
-
-                            break;
-                        case "update":
-                            if (bodyMatch.Value.Length == 0 || pathMatchSpecific.Value.Length == 0)
-                            {
-                                returnObj.status = statusCode[3];
-                                returnObj.body = null;
-                            }
-
-                            Category c = Update(jobject.SelectToken("path"), jobject.SelectToken("body"));
-                            if (c != null)
-
-                            {
-                                returnObj.status = statusCode[2];
-                                returnObj.body = null;
-                            }
-                            else
-                            {
-                                returnObj.status = statusCode[4];
-                                returnObj.body = "";
-                            }
-
-                            break;
-                    }
+                    returnObj = Controller(jobject, methodMatch.Value);
                 }
             }
             catch (Exception e)
@@ -184,76 +75,162 @@ namespace Assign_3
             return JsonConvert.SerializeObject(returnObj);
         }
 
-        public void Controller(string request)
+        public JObject Controller(JObject jobject, string value)
         {
-            
-            var jobject = JsonConvert.DeserializeObject<JObject>(request);
-            
-            
-        }
-
-
-        public Category Create(JToken jToken)
-        {
-            int cid = categories.Count + 1;
-            dynamic json = JsonConvert.DeserializeObject(jToken.ToString());
-
-            categories.Add(new Category
+            JObject returnObj = new JObject();
+            if (value.Length != 0)
             {
-                cid = cid, name = json["name"]
-            });
-            return categories[categories.Count - 1];
+                switch (value)
+                {
+                    case "create":
+                        returnObj = CreateChecker(jobject);
+                        break;
+                    case "read":
+                        returnObj = ReadChecker(jobject);
+                        break;
+                    case "update":
+                        returnObj = UpdateChecker(jobject);
+                        break;
+                    case "delete":
+                        returnObj = DeleteChecker(jobject);
+                        break;
+                    case "echo":
+                        returnObj = EchoChecker(jobject);
+                        break;
+                }
+            }
+
+            return returnObj;
         }
 
-        public List<Category> Read(JToken jToken)
+        public JObject CreateChecker(JObject jobject)
         {
-            string path = jToken.ToString();
-            string[] args = path.Split("/");
-            if (args.Length != 4) return categories;
+            dynamic returnObj = new JObject();
+            Regex body = new Regex(@"^[a-zA-Z]{1,25}$");
+            JToken jToken = jobject.SelectToken("body").ToString();
+            dynamic json = JsonConvert.DeserializeObject(jToken.ToString());
+            Match bodyMatch = body.Match(json["name"].ToString());
+            Regex path = new Regex(@"^\/api\/categories$");
+            Match pathMatch = path.Match(jobject.SelectToken("path").ToString());
+
+
+            if (pathMatch.Value.Length == 0 || bodyMatch.Value.Length == 0)
+            {
+                returnObj.status = statusCode[3];
+                returnObj.body = null;
+                return returnObj;
+            }
+
+            returnObj.status = statusCode[1];
+            returnObj.body = JsonConvert.SerializeObject(facade.Create(jobject.SelectToken("body")));
+            return returnObj;
+        }
+
+        public JObject ReadChecker(JObject jobject)
+        {
+            dynamic returnObj = new JObject();
+            Regex pathSpecific = new Regex(@"^\/api\/categories\/\d+$");
+            Match pathMatchSpecific = pathSpecific.Match(jobject.SelectToken("path").ToString());
+            Regex path = new Regex(@"^\/api\/categories$");
+            Match pathMatch = path.Match(jobject.SelectToken("path").ToString());
+            
+            if (pathMatch.Value.Length == 0 && pathMatchSpecific.Value.Length == 0)
+            {
+                returnObj.status = statusCode[3];
+                returnObj.body = null;
+            }
             else
             {
-                List<Category> returnList = new List<Category>();
-                int cid = 0;
-                if (Int32.TryParse(args[3], out cid))
+                List<Category> returnCat = facade.Read(jobject.SelectToken("path"));
+                returnObj.status = statusCode[0];
+                switch (returnCat.Count)
                 {
-                    Category c = categories.Find(category => category.cid == cid);
-                    if (c != null) returnList.Add(c);
+                    case 0:
+                        returnObj.status = statusCode[4];
+                        returnObj.body = null;
+                        break;
+                    case 1:
+                        returnObj.body = JsonConvert.SerializeObject(returnCat[0]);
+                        break;
+                    default:
+                        returnObj.body = JsonConvert.SerializeObject(returnCat);
+                        break;
                 }
-
-                return returnList;
             }
+
+            return returnObj;
         }
 
-        public Category Update(JToken path, JToken update)
+        public JObject UpdateChecker(JObject jobject)
         {
-            string convertedPath = path.ToString();
-            string[] args = convertedPath.Split("/");
+            dynamic returnObj = new JObject();
+            Regex body = new Regex(@"^[a-zA-Z]{1,25}$");
+            JToken jToken = jobject.SelectToken("body").ToString();
+            dynamic json = JsonConvert.DeserializeObject(jToken.ToString());
+            Match bodyMatch = body.Match(json["name"].ToString());
+            Regex pathSpecific = new Regex(@"^\/api\/categories\/\d+$");
+            Match pathMatchSpecific = pathSpecific.Match(jobject.SelectToken("path").ToString());
 
-            dynamic json = JsonConvert.DeserializeObject(update.ToString());
-            int cid = 0;
-            if (Int32.TryParse(args[3], out cid))
+            if (bodyMatch.Value.Length == 0 || pathMatchSpecific.Value.Length == 0)
             {
-                Category c = categories.Find(category => category.cid == cid);
-                if (c != null) c.name = json["name"];
-                return c;
+                returnObj.status = statusCode[3];
+                returnObj.body = null;
             }
+            else
+            {
+                Category c = facade.Update(jobject.SelectToken("path"), jobject.SelectToken("body"));
+                if (c != null)
 
-            return null;
+                {
+                    returnObj.status = statusCode[2];
+                    returnObj.body = null;
+                }
+                else
+                {
+                    returnObj.status = statusCode[4];
+                    returnObj.body = "";
+                }
+            }
+            return returnObj;
         }
 
-        public Category Delete(JToken path)
+        public JObject DeleteChecker(JObject jobject)
         {
-            string convertedPath = path.ToString();
-            string[] args = convertedPath.Split("/");
-            int cid = 0;
-            if (Int32.TryParse(args[3], out cid))
+            dynamic returnObj = new JObject();
+            Regex pathSpecific = new Regex(@"^\/api\/categories\/\d+$");
+            Match pathMatchSpecific = pathSpecific.Match(jobject.SelectToken("path").ToString());
+            if (pathMatchSpecific.Value.Length == 0)
             {
-                Category c = categories.Find(category => category.cid == cid);
-                if (c != null) categories.Remove(c);
-                return c;
+                returnObj.status = statusCode[3];
+                returnObj.body = null;
             }
-
-            return null;
+            else
+            {
+                Category c = facade.Delete(jobject.SelectToken("path"));
+                if (c != null)
+                {
+                    returnObj.status = statusCode[0];
+                    returnObj.body = "";
+                }
+                else
+                {
+                    returnObj.status = statusCode[4];
+                    returnObj.body = "";
+                }
+            }
+            
+            return returnObj;
         }
+
+        public JObject EchoChecker(JObject jobject)
+        {
+            dynamic returnObj = new JObject();
+            returnObj.status = statusCode[0];
+            returnObj.body = jobject.SelectToken("body");
+            return returnObj;
+
+        }
+        
+
     }
 }

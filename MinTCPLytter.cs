@@ -7,7 +7,7 @@ using System.Threading;
 using Assign_3;
 
 
-class MyTcpListener
+class MinTCPLytter
 {
     public static void Main()
     {
@@ -48,6 +48,7 @@ class MyTcpListener
                         catch (IOException e)
                         {
                             Console.WriteLine(e);
+                            client.Close();
                         }
                     }
                 });
